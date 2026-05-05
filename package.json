@@ -12,6 +12,7 @@
     "@supabase/supabase-js": "^2.105.3",
     "axios": "^1.13.6",
     "md-editor-v3": "^6.4.0",
+    "multer": "^2.1.1",
     "vue": "^3.5.30"
   },
   "devDependencies": {

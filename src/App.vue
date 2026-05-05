@@ -136,6 +136,25 @@ const deleteNote = (id, event) => {
     }
   }
 }
+
+const handleImageUpload = async (file) => {
+  const formData = new FormData()
+  formData.append('image', file)
+
+  try {
+    const res = await axios.post('/api/upload', file, {
+      headers: { 'Content-Type': file.type }
+    })
+    
+    // 将图片链接插入到当前 Markdown 内容中
+    const imageUrl = `![图片描述](${res.data.url})`
+    activeNote.value.content += `\n${imageUrl}\n`
+    
+    alert('图片上传成功！')
+  } catch (err) {
+    console.error('上传失败', err)
+  }
+}
 </script>
 
 <template>
