@@ -3,8 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 
 // 💡 线上环境建议使用环境变量，本地测试先直接填入你记事本里的值
 const supabase = createClient(
-  'https://mibpnvkgumhatuwizcvf.supabase.co', 
-  'sb_publishable_YBdSHVB9EW_6SRgRkA8b9g_OtR-FT-o'
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
 )
 
 export default async function handler(req, res) {
