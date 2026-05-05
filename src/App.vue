@@ -1,25 +1,65 @@
 <script setup>
-import { ref,onMounted,watch, computed } from 'vue'
-import {MdEditor} from 'md-editor-v3'
+import { ref, onMounted, watch, computed } from 'vue'
+import { MdEditor } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
+import axios from 'axios' // 👈 确保已经 npm install axios
 
-// 这里是数据层 (Model/ViewModel)
-// 1. 所有的笔记列表（暂时放点假数据测试排版）
+// --- 数据层 ---
 const notes = ref([])
-// 2. 当前正在查看的笔记
 const activeNote = ref(null)
-const isAiLoading = ref(false) // AI 是否正在思考
-const searchText = ref('') // 存储搜索框输入的文字
-// 调用 AI 接口的函数
-const askAI = async()=>{
-  if(!activeNote.value || isAiLoading.value) return // 没有选中笔记或者 AI 正在思考时，直接返回
-  // 准备给 AI 的指令（Prompt）
-  const prompt = `你是一个专业的写作助手。请根据以下标题和内容，续写一段话，要求衔接自然，逻辑清晰。
-  标题：${activeNote.value.title}
-  当前内容：${activeNote.value.content}`
-  isAiLoading.value = true // 开始调用 AI，设置加载状态
+const isAiLoading = ref(false)
+const searchText = ref('')
+
+// --- 💡 全栈核心：后端交互逻辑 ---
+
+// 1. 从后端获取笔记列表
+const fetchNotesFromBackend = async () => {
   try {
-    // 这里以调用一个通用的 AI 代理接口为例
+    const response = await axios.get('/api/notes')
+    // 如果后端有数据，就用后端的；如果没有，保持现有数据
+    if (response.data.data && response.data.data.length > 0) {
+      notes.value = response.data.data
+      if (!activeNote.value) activeNote.value = notes.value[0]
+      console.log('✅ 已同步云端数据')
+    }
+  } catch (error) {
+    console.error('❌ 获取后端数据失败，降级使用本地存储:', error)
+  }
+}
+
+// 2. 将数据保存到后端
+const saveNoteToBackend = async (note) => {
+  try {
+    // 每次改变都同步到后端 api/notes.js
+    await axios.post('/api/notes', note)
+    console.log('☁️ 数据已实时同步至云端')
+  } catch (error) {
+    console.warn('⚠️ 云端同步失败，数据仅保存在本地缓存')
+  }
+}
+
+// --- 业务逻辑 ---
+
+const createNewNote = () => {
+  const newNote = {
+    id: Date.now(),
+    title: '',
+    content: ''
+  }
+  notes.value.unshift(newNote)
+  activeNote.value = newNote
+}
+
+const selectNote = (note) => {
+  activeNote.value = note
+}
+
+// AI 续写逻辑保持不变...
+const askAI = async () => {
+  if(!activeNote.value || isAiLoading.value) return
+  const prompt = `你是一个专业的写作助手。标题：${activeNote.value.title}\n内容：${activeNote.value.content}`
+  isAiLoading.value = true
+  try {
     const response = await fetch('https://api.chatanywhere.tech/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -29,97 +69,73 @@ const askAI = async()=>{
       body: JSON.stringify({ 
         model: "gpt-3.5-turbo",
         messages: [{ role: "user", content: prompt }]
-       })
+      })
     })
     const data = await response.json()
-    const aiResult = data.choices[0].message.content
-
-    // 2. 将 AI 的结果追加到当前内容后面
-    activeNote.value.content += '\n\n' + aiResult
-    
+    activeNote.value.content += '\n\n' + data.choices[0].message.content
   } catch (error) {
-    console.error('AI 续写失败:', error)
-    alert('AI 好像断网了，请检查网络或 API Key')
+    alert('AI 接口调用失败')
   } finally {
     isAiLoading.value = false
   }
 }
-// 3. 新建笔记
-const createNewNote = () => {
-  const newNote = {
-    id: Date.now(),  // 用当前时间戳作为唯一 ID
-    title: '',
-    content: ''
-  }
-  notes.value.unshift(newNote)  // 把新笔记插到列表的最前面
-  activeNote.value = newNote    // 自动选中这篇新笔记
-}
-// 4.切换选中的笔记
-const selectNote = (note) => {
-  activeNote.value = note
-}
-// 5. 本地存储逻辑
-onMounted(()=>{
-  // 尝试从浏览器缓存中读取名叫 'my-ai-notes' 的数据
-  const saveNotes = localStorage.getItem('my-ai-notes')
-  if(saveNotes && saveNotes !== '[]'){
-    // 因为 localStorage 只能存字符串，所以读取时要用 JSON.parse 转回数组
-    notes.value = JSON.parse(saveNotes)
-  }else{
-    // 第一次使用时，给入惊艳的“种子数据”
-    const demoNotes = [
-      { id: 1, title: '👋 欢迎使用 AI 极简笔记', content: '这是一个基于 Vue3 纯前端实现的个人知识库...\n你可以尝试点击右侧的 AI 按钮续写本段内容。' },
-      { id: 2, title: '💻 面试项目亮点总结', content: '1. 采用 MVVM 架构\n2. 零后端实现数据持久化\n3. 接入大模型 API...' }
-    ]
-    notes.value = demoNotes
-  }
-  activeNote.value = notes.value[0]
-})
-// 6. 监听 notes 数组的变化，只要有任何风吹草动，就自动保存！
-watch(notes,(newNotes)=>{
-  // 把数组用 JSON.stringify 转成字符串存进浏览器
-  localStorage.setItem('my-ai-notes',JSON.stringify(newNotes))
-},{deep:true}) // deep:true 表示要深度监听数组内部的变化,无论改了标题还是内容都会触发
 
-const deleteNote = (id, event) => {
-  // 阻止事件冒泡，防止触发 selectNote
-  event.stopPropagation()
-  
-  // 确认弹窗（增强用户体验，防止误删）
-  if (!confirm('确定要删除这篇笔记吗？')) return
+// --- 生命周期与监听 ---
 
-  // 1. 找到要删除的笔记索引
-  const index = notes.value.findIndex(n => n.id === id)
+onMounted(async () => {
+  // 优先级：先尝试读后端数据
+  await fetchNotesFromBackend()
   
-  if (index !== -1) {
-    // 2. 从数组中移除
-    notes.value.splice(index, 1)
-    
-    // 3. 核心体验逻辑：如果删掉的是当前选中的笔记
-    if (activeNote.value && activeNote.value.id === id) {
-      if (notes.value.length > 0) {
-        // 如果还有剩余笔记，选中第一篇
-        activeNote.value = notes.value[0]
-      } else {
-        // 如果全删光了，新建一篇空的，防止右侧报错
-        createNewNote()
-      }
+  // 如果后端没拿回数据，再看本地缓存（保证离线体验）
+  if (notes.value.length === 0) {
+    const saved = localStorage.getItem('my-ai-notes')
+    if (saved) {
+      notes.value = JSON.parse(saved)
+    } else {
+      // 首次进入的种子数据
+      notes.value = [
+        { id: 1, title: '👋 欢迎使用全栈 AI 笔记', content: '现在你的笔记已经支持 Vercel Serverless 后端同步了！' }
+      ]
     }
   }
-}
+  if (!activeNote.value) activeNote.value = notes.value[0]
+})
 
-// 核心逻辑：过滤后的笔记列表
-const filteredNotes = computed(() => {
-  // 如果搜索框为空，直接返回所有笔记
-  if (!searchText.value.trim()) {
-    return notes.value
-  }
+// 监听数据变化：本地缓存 + 云端同步双管齐下
+let saveTimer = null
+watch(notes, (newNotes) => {
+  // 1. 本地存储依然是实时的
+  localStorage.setItem('my-ai-notes', JSON.stringify(newNotes))
   
-  // 否则，根据标题进行不区分大小写的匹配
+  // 2. 云端同步增加 1 秒防抖：用户停止输入 1 秒后才发送请求
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    if (activeNote.value) {
+      saveNoteToBackend(activeNote.value)
+    }
+  }, 1000) 
+}, { deep: true })
+
+// 搜索逻辑
+const filteredNotes = computed(() => {
+  if (!searchText.value.trim()) return notes.value
   return notes.value.filter(note => 
     note.title.toLowerCase().includes(searchText.value.toLowerCase())
   )
 })
+
+const deleteNote = (id, event) => {
+  event.stopPropagation()
+  if (!confirm('确定要删除吗？')) return
+  const index = notes.value.findIndex(n => n.id === id)
+  if (index !== -1) {
+    notes.value.splice(index, 1)
+    if (activeNote.value?.id === id) {
+      activeNote.value = notes.value[0] || null
+      if (!activeNote.value) createNewNote()
+    }
+  }
+}
 </script>
 
 <template>
